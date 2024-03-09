@@ -15,76 +15,97 @@ def load_data(division):
     rsheet = pd.read_csv("https://docs.google.com/spreadsheets/d/1m_S9K3eirLCN-LJ1IHOp7u04ESZ1Vlaq384FIsdv__Y/export?format=csv", skiprows=3)
     
     # Filter rows based on the selected division
-    if division == 'Godel':
-        sheet = rsheet.iloc[0:10]
-    else:
-        sheet = rsheet.iloc[15:25]
+    gsheet = rsheet.iloc[0:10]
+    bsheet = rsheet.iloc[15:25]
     
     # Select only 'Team Name' and 'Score' columns
-    sheet = sheet[['Team Name', 'Score']]
+    gsheet = gsheet[['Team Name', 'Score']]
+    bsheet = bsheet[['Team Name', 'Score']]
     sheet1 = rsheet[['Teams 1', 'Scores 1']]
     sheet2 = rsheet[['Teams 2', 'Scores 2']]
     sheet3 = rsheet[['Teams 3', 'Scores 3']]
 
     # Rename columns
-    sheet.columns = ['Team Name', 'Score']
+    gsheet.columns = ['Team Name', 'Score']
+    bsheet.columns = ['Team Name', 'Score']
     sheet1.columns = ['Team Name', 'Score']
     sheet2.columns = ['Team Name', 'Score']
     sheet3.columns = ['Team Name', 'Score']
 
+    gsheet = pd.concat([sheet1.iloc[0:10], sheet2.iloc[0:10], sheet3.iloc[0:10]], ignore_index=True)
+    bsheet = pd.concat([sheet1.iloc[11:25], sheet2.iloc[11:25], sheet3.iloc[11:25]], ignore_index=True)
+
+    gsheet = gsheet[gsheet['Team Name'].notna()]
+    bsheet = bsheet[bsheet['Team Name'].notna()]
+
+    gsheet.loc[:, 'Score'] = pd.to_numeric(gsheet['Score'], errors='coerce')
+    bsheet.loc[:, 'Score'] = pd.to_numeric(bsheet['Score'], errors='coerce')
+
     if division == 'Godel':
-        sheet1 = sheet1.iloc[0:10]
-        sheet2 = sheet2.iloc[0:10]
-        sheet3 = sheet3.iloc[0:10]
+        return gsheet
     else:
-        sheet1 = sheet1.iloc[11:25]
-        sheet2 = sheet2.iloc[11:25]
-        sheet3 = sheet3.iloc[11:25]
-
-    combined_sheet = pd.concat([sheet1, sheet2, sheet3], ignore_index=True)
-    sheet = combined_sheet
-
-    sheet = sheet[sheet['Team Name'].notna()]
-
-    if division == 'Godel':
-        # Add columns
-        pass
-
-    sheet.loc[:, 'Score'] = pd.to_numeric(sheet['Score'], errors='coerce')
-    
-    return sheet
+        return bsheet 
 
 # Load and sort leaderboard data
 leaderboard_data = load_data(division)
 leaderboard_data = leaderboard_data.sort_values('Score', ascending=False).reset_index(drop=True)
 
-# Append rank to team names
-leaderboard_data['Team Name'] = (leaderboard_data.index + 1).astype(str) + '. ' + leaderboard_data['Team Name'].astype(str)
+# Split the data into top 10 and the rest
+top_10_data = leaderboard_data.head(10)
+rest_data = leaderboard_data.tail(len(leaderboard_data) - 10)
 
-# Create the base chart with Altair
-base = alt.Chart(leaderboard_data).encode(
-    alt.X('Score:Q', title='Score'),
-    alt.Y('Team Name:N', title='Team Name', sort=alt.EncodingSortField(field='Score', op='max', order='descending'))
-)
+# Function to create chart for top 10 teams
+def create_chart(data):
+    # Append rank to team names
+    data['Team Name'] = (data.index + 1).astype(str) + '. ' + data['Team Name'].astype(str)
 
-# Bar chart to represent scores
-bar_chart = base.mark_bar().encode(
-    color=alt.Color('Score:Q', scale=alt.Scale(scheme='reds'), legend=None)
-)
+    # Create the base chart with Altair
+    base = alt.Chart(data).encode(
+        alt.X('Score:Q', title='Score'),
+        alt.Y('Team Name:N', title='Team Name', sort=alt.EncodingSortField(field='Score', op='max', order='descending'))
+    )
 
-# Text layer to display scores on bars
-text_chart = base.mark_text(
-    align='left',
-    baseline='middle',
-    dx=3,  # Nudge text to the right for readability
-    color='white'
-).encode(
-    text=alt.Text('Score:Q', format='.1f')  # Format score to one decimal place
-)
+    # Bar chart to represent scores
+    bar_chart = base.mark_bar().encode(
+        color=alt.Color('Score:Q', scale=alt.Scale(scheme='reds'), legend=None)
+    )
 
-# Layer charts
-chart = bar_chart + text_chart
+    # Text layer to display scores on bars
+    text_chart = base.mark_text(
+        align='left',
+        baseline='middle',
+        dx=3  # Nudge text to the right for readability
+    ).encode(
+        text=alt.Text('Score:Q', format='.1f')  # Format score to one decimal place
+    )
 
-# Display chart
-st.write(chart)
+    # Layer charts
+    return bar_chart + text_chart
 
+custom_css = """
+<style>
+    .rest-teams {
+        font-size: 12px;
+        font-family: sans-serif;
+    }
+</style>
+"""
+
+st.markdown(custom_css, unsafe_allow_html=True)
+
+# Use Streamlit's columns to display charts side by side with spacing
+col1, spacer, col2 = st.columns([5, 3, 5])  # Adjust the middle column width for spacing
+
+with col1:
+    st.write("Top 10 Teams")
+    st.write(create_chart(top_10_data))
+
+with col2:
+    # Format and display each team and score using markdown
+    markdown_text = "<div class='rest-teams'>"
+    ind = 11
+    for _, row in rest_data.iterrows():
+        markdown_text += f"{ind}. {row['Team Name']}: {row['Score']}<br>"
+        ind += 1
+    markdown_text += "</div>"
+    st.markdown(markdown_text, unsafe_allow_html=True)
